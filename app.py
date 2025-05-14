@@ -32,7 +32,11 @@ Você é um analista de dados. Com base no conteúdo abaixo, extraia dados e pro
 Para cada gráfico, informe:
 - Título
 - Tipo
-- Tabela (formato markdown ou texto plano)
+- Tabela (sempre em **bloco de código Markdown**, ex.:
++  markdown
++  Coluna1 | Coluna2
++  --- | ---
++  x | y
 - Interpretação executiva
 """
     resposta = client.chat.completions.create(
@@ -45,28 +49,29 @@ Para cada gráfico, informe:
     )
     return resposta.choices[0].message.content
 
-def extrair_tabelas_do_texto(texto):
-    padrao = re.findall(r'(\\w.+\\|.+\\n(?:[-\\w\\s%\\.]+\\|.*\\n)+)', texto)
-    tabelas = []
-    for bloco in padrao:
-        linhas = bloco.strip().split("\\n")
-        colunas = [c.strip() for c in linhas[0].split("|")]
-        dados = []
-        for linha in linhas[1:]:
-            if "|" in linha:
-                valores = [v.strip() for v in linha.split("|")]
-                if len(valores) == len(colunas):
-                    dados.append(valores)
-        if dados:
-            df = pd.DataFrame(dados, columns=colunas)
-            for col in df.columns[1:]:
-                try:
-                    df[col] = pd.to_numeric(df[col].str.replace('%','').str.replace(',','.'), errors='coerce')
-                except:
-                    pass
-            tabelas.append(df)
-    return tabelas
-
+def extrair_tabelas_do_texto(texto: str):
+    """
+    Procura por tabelas Markdown dentro de blocos de código (```markdown … ```),
+    e retorna uma lista de DataFrames.
+    """
+    pattern = r'```(?:\w*\n)?([\s\S]*?\|[\s\S]*?)```'
+    matches = re.findall(pattern, texto)
+    dataframes = []
+    
+    for match in matches:
+        table_text = match.strip()
+        # Normaliza pipes
+        table_text = re.sub(r'\s*\|\s*', '|', table_text)
+        try:
+            df = pd.read_csv(io.StringIO(table_text), sep='|', engine='python', skipinitialspace=True)
+            # Descarta colunas de nome vazio
+            df = df.loc[:, df.columns.str.strip() != '']
+            df.columns = df.columns.str.strip()
+            dataframes.append(df)
+        except Exception:
+            continue
+    
+    return dataframes
 def plotar_grafico(df):
     fig, ax = plt.subplots()
     x_col, y_col = df.columns[0], df.columns[1]
