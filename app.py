@@ -9,19 +9,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 
-# Tente usar o NLTK, mas tenha um fallback se não funcionar
-try:
-    import nltk
-    from nltk.tokenize import sent_tokenize
-    # Download explícito dos dados necessários para tokenização
-    nltk.download('punkt', quiet=True)
-except Exception as e:
-    st.warning(f"Não foi possível carregar o NLTK completamente. Usando método alternativo de tokenização. Erro: {str(e)}")
-    # Função alternativa de tokenização usando expressões regulares
-    def sent_tokenize(text):
-        # Divide o texto em sentenças por pontuação seguida de espaço e letra maiúscula
-        return re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
-
 # === CONFIGURAÇÕES DA PÁGINA ===
 st.set_page_config(
     page_title="Analisador Estratégico de Mercado com IA",
@@ -92,15 +79,11 @@ def extrair_texto_arquivo(uploaded_file):
 def dividir_em_blocos(texto, max_tokens=8000):
     """
     Divide o texto em blocos de até max_tokens tokens aproximados.
-    Usa sentenças completas para evitar cortar no meio.
+    Implementação independente do NLTK, usando apenas expressões regulares.
     """
-    try:
-        # Tenta usar o NLTK para dividir sentenças
-        sentences = sent_tokenize(texto)
-    except Exception as e:
-        st.warning(f"Erro ao usar tokenizador de sentenças. Usando método simples. Erro: {str(e)}")
-        # Método alternativo: divide por pontos, pontos de exclamação e pontos de interrogação
-        sentences = re.split(r'(?<=[.!?])\s+', texto)
+    # Método simples para dividir texto em sentenças usando expressões regulares
+    # Divide em frases quando encontra '.', '!', ou '?' seguido por espaço e maiúscula
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', texto)
     
     blocks = []
     current_block = []
@@ -127,9 +110,39 @@ def dividir_em_blocos(texto, max_tokens=8000):
     
     # Garantir que temos pelo menos um bloco
     if not blocks:
-        # Se não conseguimos dividir por algum motivo, use uma abordagem simples
-        words = texto.split()
-        blocks = [" ".join(words[i:i+max_tokens*4]) for i in range(0, len(words), max_tokens*4)]
+        # Dividir por parágrafos
+        paragraphs = texto.split('\n')
+        
+        if len(paragraphs) > 1:
+            # Se temos múltiplos parágrafos, agrupe-os em blocos
+            current_block = []
+            current_token_count = 0
+            
+            for paragraph in paragraphs:
+                if not paragraph.strip():
+                    continue
+                    
+                estimated_tokens = len(paragraph) // 4
+                
+                if current_token_count + estimated_tokens > max_tokens and current_block:
+                    blocks.append("\n".join(current_block))
+                    current_block = [paragraph]
+                    current_token_count = estimated_tokens
+                else:
+                    current_block.append(paragraph)
+                    current_token_count += estimated_tokens
+            
+            if current_block:
+                blocks.append("\n".join(current_block))
+        
+        # Se ainda não temos blocos, divisão simples por palavras
+        if not blocks:
+            words = texto.split()
+            blocks = [" ".join(words[i:i+max_tokens*4]) for i in range(0, len(words), max_tokens*4)]
+            
+            # Último recurso: apenas use o texto inteiro como um bloco
+            if not blocks:
+                blocks = [texto]
         
     return blocks
 
