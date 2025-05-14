@@ -2,4 +2,5 @@ streamlit
 openai
 python-docx
 pandas
-matplotlib
+plotly
+kaleido
