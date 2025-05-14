@@ -8,14 +8,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
-import nltk
-from nltk.tokenize import sent_tokenize
 
-# Baixa recursos do NLTK se necessário
+# Tente usar o NLTK, mas tenha um fallback se não funcionar
 try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
+    import nltk
+    from nltk.tokenize import sent_tokenize
+    # Download explícito dos dados necessários para tokenização
+    nltk.download('punkt', quiet=True)
+except Exception as e:
+    st.warning(f"Não foi possível carregar o NLTK completamente. Usando método alternativo de tokenização. Erro: {str(e)}")
+    # Função alternativa de tokenização usando expressões regulares
+    def sent_tokenize(text):
+        # Divide o texto em sentenças por pontuação seguida de espaço e letra maiúscula
+        return re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
 
 # === CONFIGURAÇÕES DA PÁGINA ===
 st.set_page_config(
@@ -89,8 +94,13 @@ def dividir_em_blocos(texto, max_tokens=8000):
     Divide o texto em blocos de até max_tokens tokens aproximados.
     Usa sentenças completas para evitar cortar no meio.
     """
-    # Dividir o texto em sentenças
-    sentences = sent_tokenize(texto)
+    try:
+        # Tenta usar o NLTK para dividir sentenças
+        sentences = sent_tokenize(texto)
+    except Exception as e:
+        st.warning(f"Erro ao usar tokenizador de sentenças. Usando método simples. Erro: {str(e)}")
+        # Método alternativo: divide por pontos, pontos de exclamação e pontos de interrogação
+        sentences = re.split(r'(?<=[.!?])\s+', texto)
     
     blocks = []
     current_block = []
@@ -98,6 +108,9 @@ def dividir_em_blocos(texto, max_tokens=8000):
     
     # Estima tokens (aproximadamente 4 caracteres por token)
     for sentence in sentences:
+        if not sentence.strip():  # Pula sentenças vazias
+            continue
+            
         estimated_tokens = len(sentence) // 4
         
         if current_token_count + estimated_tokens > max_tokens and current_block:
@@ -112,6 +125,12 @@ def dividir_em_blocos(texto, max_tokens=8000):
     if current_block:
         blocks.append(" ".join(current_block))
     
+    # Garantir que temos pelo menos um bloco
+    if not blocks:
+        # Se não conseguimos dividir por algum motivo, use uma abordagem simples
+        words = texto.split()
+        blocks = [" ".join(words[i:i+max_tokens*4]) for i in range(0, len(words), max_tokens*4)]
+        
     return blocks
 
 
@@ -549,4 +568,3 @@ if uploaded_file and openai_api_key:
             if st.button(f"Regenerar visualizações para o Bloco {i+1}", key=f"regenerate_block_{i}"):
                 st.session_state.visualizacoes_por_bloco[i] = None
                 st.experimental_rerun()
-
