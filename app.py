@@ -1,53 +1,76 @@
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-from docx import Document
-from openai import OpenAI
-import io
+import openai
+import docx
 import re
+import io
+import pandas as pd
+import plotly.express as px
 
-# === VERIFICAÇÃO DE CHAVE ===
-if "OPENAI_API_KEY" not in st.secrets:
-    st.error("⚠️ Chave OPENAI_API_KEY não configurada. Vá em 'Manage App' > 'Secrets' no Streamlit Cloud.")
-    st.stop()
+# === CONFIGURAÇÕES DA PÁGINA ===
+st.set_page_config(
+    page_title="Analisador de Relatórios com IA",
+    layout="wide",
+)
 
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# === CREDENCIAIS ===
+# Tenta carregar da secrets; se não, pede ao usuário
+openai_api_key = st.secrets.get("OPENAI_API_KEY") or st.sidebar.text_input(
+    "OpenAI API Key", type="password"
+)
+client = openai.OpenAI(api_key=openai_api_key)
 
 # === FUNÇÕES AUXILIARES ===
 
-def extrair_texto(docx_file):
-    document = Document(io.BytesIO(docx_file.read()))
-    return "\n".join([p.text for p in document.paragraphs if p.text.strip()])
+def extrair_texto_arquivo(uploaded_file):
+    """
+    Extrai texto de um arquivo .docx usando python-docx.
+    """
+    doc = docx.Document(uploaded_file)
+    return "\n".join([p.text for p in doc.paragraphs])
+
 
 def dividir_em_blocos(texto, max_palavras=2000):
+    """
+    Divide o texto em blocos de até max_palavras palavras.
+    """
     palavras = texto.split()
-    return [" ".join(palavras[i:i+max_palavras]) for i in range(0, len(palavras), max_palavras)]
+    blocos = []
+    for i in range(0, len(palavras), max_palavras):
+        blocos.append(" ".join(palavras[i:i+max_palavras]))
+    return blocos
+
 
 def solicitar_analise(texto):
+    """
+    Chama o GPT para gerar análise e tabelas em Markdown.
+    """
     prompt = f"""
-Você é um analista de dados. Com base no conteúdo abaixo, extraia dados e proponha gráficos:
+Você é um analista de dados experiente, especialista em visualizações.
 
-{texto}
-
+Com base no conteúdo abaixo, extraia dados e proponha gráficos.
 Para cada gráfico, informe:
 - Título
 - Tipo
-- Tabela (sempre em **bloco de código Markdown**, ex.:
-+  markdown
-+  Coluna1 | Coluna2
-+  --- | ---
-+  x | y
+- Tabela (sempre em bloco de código Markdown, ex:
+```markdown
+Coluna1 | Coluna2
+--- | ---
+valor1 | valor2
+```
 - Interpretação executiva
+
+{texto}
 """
     resposta = client.chat.completions.create(
-        model="gpt-4",
+        model=modelo,
         messages=[
             {"role": "system", "content": "Você é um analista de dados experiente, especialista em visualizações."},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
-        temperature=0.5
+        temperature=temperatura,
     )
     return resposta.choices[0].message.content
+
 
 def extrair_tabelas_do_texto(texto: str):
     """
@@ -57,73 +80,63 @@ def extrair_tabelas_do_texto(texto: str):
     pattern = r'```(?:\w*\n)?([\s\S]*?\|[\s\S]*?)```'
     matches = re.findall(pattern, texto)
     dataframes = []
-    
     for match in matches:
         table_text = match.strip()
-        # Normaliza pipes
         table_text = re.sub(r'\s*\|\s*', '|', table_text)
         try:
             df = pd.read_csv(io.StringIO(table_text), sep='|', engine='python', skipinitialspace=True)
-            # Descarta colunas de nome vazio
             df = df.loc[:, df.columns.str.strip() != '']
             df.columns = df.columns.str.strip()
             dataframes.append(df)
         except Exception:
             continue
-    
     return dataframes
-def plotar_grafico(df):
-    fig, ax = plt.subplots()
-    x_col, y_col = df.columns[0], df.columns[1]
-    ax.bar(df[x_col], df[y_col])
-    ax.set_xlabel(x_col)
-    ax.set_ylabel(y_col)
-    ax.set_title(f'{y_col} por {x_col}')
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
+
+
+def plotar_bar_interativo(df: pd.DataFrame):
+    """
+    Gera um gráfico de barras interativo com Plotly Express.
+    """
+    fig = px.bar(
+        df,
+        x=df.columns[0],
+        y=df.columns[1],
+        title=f"{df.columns[1]} por {df.columns[0]}",
+        labels={df.columns[0]: df.columns[0], df.columns[1]: df.columns[1]},
+        hover_data={df.columns[1]: ":,.2f"},
+    )
+    fig.update_layout(margin=dict(l=40, r=40, t=50, b=40))
     return fig
 
-def fig_to_png(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png")
-    buf.seek(0)
-    return buf
-
 # === INTERFACE ===
+st.title("Analisador de Relatórios com IA")
 
-st.title("📄 Analisador de Relatórios com Gráficos por IA")
-st.write("Faça upload de um arquivo `.docx`. Eu irei extrair os dados e gerar gráficos automaticamente.")
+# Configurações via sidebar
+defaul_max = 2000
+max_palavras = st.sidebar.slider("Máx. de palavras por bloco", 500, 5000, defaul_max, step=500)
+modelo = st.sidebar.selectbox("Modelo OpenAI", ["gpt-4", "gpt-3.5-turbo"], index=0)
+temperatura = st.sidebar.slider("Temperatura", 0.0, 1.0, 0.5, step=0.1)
 
-arquivo = st.file_uploader("📤 Envie seu arquivo Word (.docx)", type=["docx"])
+uploaded_file = st.file_uploader("Envie um documento .docx", type=["docx"])
 
-if arquivo:
-    with st.spinner("Lendo o conteúdo..."):
-        texto = extrair_texto(arquivo)
-        blocos = dividir_em_blocos(texto)
+if uploaded_file:
+    texto = extrair_texto_arquivo(uploaded_file)
+    blocos = dividir_em_blocos(texto, max_palavras)
 
-    for i, bloco in enumerate(blocos):
-        st.markdown(f"## 🔍 Bloco {i+1}")
-        with st.spinner("Consultando a OpenAI..."):
-            resposta = solicitar_analise(bloco)
+    for idx, bloco in enumerate(blocos, start=1):
+        with st.expander(f"Bloco {idx} de {len(blocos)}"):
+            with st.spinner("Gerando análise..."):
+                resposta = solicitar_analise(bloco)
+                st.markdown(resposta)
 
-        st.markdown("#### 🧠 Resposta da IA")
-        st.text_area(label=f"Resposta do GPT para bloco {i+1}", value=resposta, height=250)
-
-        with st.spinner("Gerando gráficos..."):
-            tabelas = extrair_tabelas_do_texto(resposta)
-            if tabelas:
-                for idx, tabela in enumerate(tabelas):
-                    st.dataframe(tabela)
-                    fig = plotar_grafico(tabela)
-                    with st.expander(f'Gráfico {idx+1}: {tabela.columns[1]} vs {tabela.columns[0]}'):
-                        st.pyplot(fig)
-                        st.download_button(
-                            label="📥 Baixar gráfico como PNG",
-                            data=fig_to_png(fig),
-                            file_name=f"{tabela.columns[1]}_por_{tabela.columns[0]}.png",
-                            mime="image/png"
-                        )
-            else:
-                st.info("Nenhuma tabela detectada para gerar gráficos neste bloco.")
+            with st.spinner("Gerando gráficos..."):
+                tabelas = extrair_tabelas_do_texto(resposta)
+                if tabelas:
+                    for j, tabela in enumerate(tabelas, start=1):
+                        st.dataframe(tabela)
+                        fig = plotar_bar_interativo(tabela)
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Nenhuma tabela detectada para gerar gráficos neste bloco.")
 
 
