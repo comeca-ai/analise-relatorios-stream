@@ -622,9 +622,16 @@ def criar_visualizacao(vis_info):
     interpretacao = vis_info['interpretacao']
     fonte = vis_info['fonte']
     
-    if len(df.columns) < 2 or len(df) == 0:
-        st.warning(f"Dados insuficientes para criar visualização para '{titulo}'")
+    # Verificar se o DataFrame é válido
+    if df is None or df.empty:
+        st.warning(f"Dados vazios para '{titulo}'. Impossível criar visualização.")
         return
+    
+    # Garantir que temos pelo menos duas colunas
+    if len(df.columns) < 2:
+        st.warning(f"Dados insuficientes para criar visualização para '{titulo}'. Adicionando coluna de valores.")
+        # Adicionar uma coluna de valores para possibilitar a visualização
+        df['Valor'] = 1
     
     # Container para o gráfico com estilo
     st.markdown(f"<div class='chart-container'>", unsafe_allow_html=True)
@@ -632,40 +639,41 @@ def criar_visualizacao(vis_info):
     
     fig = None
     
-    # Decidir qual tipo de gráfico gerar com base no tipo informado
-    if 'barra' in tipo or 'coluna' in tipo:
-        # Identificar se são barras agrupadas ou empilhadas
-        if 'empilhada' in tipo or 'stack' in tipo:
-            fig = px.bar(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                barmode='stack'
-            )
-        elif '100%' in tipo:
-            fig = px.bar(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                barmode='relative'
-            )
-        else:
-            fig = px.bar(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                barmode='group'
-            )
-            
-        if 'horizontal' in tipo:
-            fig.update_layout(autosize=True, height=max(400, 50 * len(df)))
-            fig = go.Figure(fig).update_layout(yaxis_autorange="reversed")
-            fig.update_layout(xaxis_title=None, yaxis_title=None)
-        else:
-            fig.update_layout(xaxis_title=None, yaxis_title=None)
+    try:
+        # Decidir qual tipo de gráfico gerar com base no tipo informado
+        if 'barra' in tipo or 'coluna' in tipo:
+            # Identificar se são barras agrupadas ou empilhadas
+            if 'empilhada' in tipo or 'stack' in tipo:
+                fig = px.bar(
+                    df, 
+                    x=df.columns[0], 
+                    y=df.columns[1:], 
+                    title=titulo,
+                    barmode='stack'
+                )
+            elif '100%' in tipo:
+                fig = px.bar(
+                    df, 
+                    x=df.columns[0], 
+                    y=df.columns[1:], 
+                    title=titulo,
+                    barmode='relative'
+                )
+            else:
+                fig = px.bar(
+                    df, 
+                    x=df.columns[0], 
+                    y=df.columns[1:], 
+                    title=titulo,
+                    barmode='group'
+                )
+                
+            if 'horizontal' in tipo:
+                fig.update_layout(autosize=True, height=max(400, 50 * len(df)))
+                fig = go.Figure(fig).update_layout(yaxis_autorange="reversed")
+                fig.update_layout(xaxis_title=None, yaxis_title=None)
+            else:
+                fig.update_layout(xaxis_title=None, yaxis_title=None)
             
     elif 'pizza' in tipo or 'torta' in tipo or 'pie' in tipo:
         fig = px.pie(
@@ -730,31 +738,73 @@ def criar_visualizacao(vis_info):
         
     elif 'dispersao' in tipo or 'scatter' in tipo or 'bolha' in tipo or 'matriz' in tipo:
         if len(df.columns) >= 3:  # Se tiver 3 colunas, usar a terceira para tamanho
-            fig = px.scatter(
-                df, 
-                x=df.columns[1], 
-                y=df.columns[2], 
-                size=df.columns[3] if len(df.columns) > 3 else None,
-                hover_name=df.columns[0],
-                text=df.columns[0],
-                title=titulo
-            )
-            
-            # Adicionar linhas de referência se for uma matriz 2x2
-            if 'matriz' in tipo or '2x2' in tipo:
-                x_mid = (df[df.columns[1]].max() + df[df.columns[1]].min()) / 2
-                y_mid = (df[df.columns[2]].max() + df[df.columns[2]].min()) / 2
+            # Garantir que as colunas sejam numéricas para gráfico de dispersão
+            for col in df.columns[1:]:
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                except:
+                    pass
                 
-                fig.add_shape(
-                    type="line", x0=x_mid, x1=x_mid, y0=df[df.columns[2]].min(), y1=df[df.columns[2]].max(),
-                    line=dict(color="gray", width=1, dash="dash")
+            # Verificar se há valores NaN e substituí-los, se necessário
+            if df[df.columns[1]].isna().any() or df[df.columns[2]].isna().any():
+                st.warning(f"Valores não numéricos encontrados e substituídos por 0 para o gráfico de dispersão '{titulo}'.")
+                df[df.columns[1]] = df[df.columns[1]].fillna(0)
+                df[df.columns[2]] = df[df.columns[2]].fillna(0)
+            
+            try:
+                # Parâmetros de tamanho para bolhas, se necessário
+                size_param = None
+                if len(df.columns) > 3:
+                    # Verificar se a coluna de tamanho é numérica
+                    try:
+                        df[df.columns[3]] = pd.to_numeric(df[df.columns[3]], errors='coerce')
+                        if not df[df.columns[3]].isna().all():  # Se tiver pelo menos um valor válido
+                            df[df.columns[3]] = df[df.columns[3]].fillna(df[df.columns[3]].mean())
+                            size_param = df[df.columns[3]]
+                    except:
+                        st.warning(f"Coluna de tamanho não numérica ignorada para '{titulo}'.")
+                
+                fig = px.scatter(
+                    df, 
+                    x=df.columns[1], 
+                    y=df.columns[2], 
+                    size=size_param,
+                    hover_name=df.columns[0],
+                    text=df.columns[0],
+                    title=titulo
                 )
-                fig.add_shape(
-                    type="line", x0=df[df.columns[1]].min(), x1=df[df.columns[1]].max(), y0=y_mid, y1=y_mid,
-                    line=dict(color="gray", width=1, dash="dash")
+                
+                # Adicionar linhas de referência se for uma matriz 2x2
+                if 'matriz' in tipo or '2x2' in tipo:
+                    x_mid = (df[df.columns[1]].max() + df[df.columns[1]].min()) / 2
+                    y_mid = (df[df.columns[2]].max() + df[df.columns[2]].min()) / 2
+                    
+                    fig.add_shape(
+                        type="line", x0=x_mid, x1=x_mid, y0=df[df.columns[2]].min(), y1=df[df.columns[2]].max(),
+                        line=dict(color="gray", width=1, dash="dash")
+                    )
+                    fig.add_shape(
+                        type="line", x0=df[df.columns[1]].min(), x1=df[df.columns[1]].max(), y0=y_mid, y1=y_mid,
+                        line=dict(color="gray", width=1, dash="dash")
+                    )
+            except Exception as e:
+                st.error(f"Erro ao criar gráfico de dispersão: {str(e)}")
+                # Fallback para gráfico de barras
+                fig = px.bar(
+                    df, 
+                    x=df.columns[0], 
+                    y=df.columns[1], 
+                    title=titulo
                 )
         else:
             st.warning(f"Dados insuficientes para gráfico de dispersão '{titulo}'. São necessárias pelo menos 3 colunas.")
+            # Fallback para gráfico de barras
+            fig = px.bar(
+                df, 
+                x=df.columns[0], 
+                y=df.columns[1] if len(df.columns) > 1 else pd.Series([1] * len(df)), 
+                title=titulo
+            )
             
     elif 'treemap' in tipo:
         if len(df.columns) >= 2:
