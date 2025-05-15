@@ -57,9 +57,25 @@ def interface_extracao_manual():
     Interface para extração manual de dados.
     """
     try:
-        # ... seu código aqui ...
-        return resultado
+        st.title("Análise Manual de Relatórios")
+        st.write("Aqui você poderá fazer upload de arquivos e extrair os dados manualmente.")
+        uploaded_file = st.file_uploader("Selecione um documento (Word, PDF, Excel)", type=['docx','pdf','xlsx','csv'])
+        if uploaded_file:
+            # exemplo de uso: ler com python-docx ou pandas, dependendo do tipo
+            st.success(f"Arquivo '{uploaded_file.name}' carregado com sucesso!")
+            # ... seu código de extração e visualização ...
+            # ex: vis_info = extrair_vis_info(uploaded_file)
+            # criar_visualizacao(vis_info)
+        else:
+            st.info("Aguardando upload de arquivo.")
 
     except Exception as e:
         st.error(f"Erro na interface de extração manual: {e}")
         return None
+
+
+# --------------------------------------------------
+# Chama a interface assim que o Streamlit roda o script
+# --------------------------------------------------
+if __name__ == "__main__":
+    interface_extracao_manual()
