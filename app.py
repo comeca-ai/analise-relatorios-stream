@@ -412,29 +412,7 @@ def criar_visualizacao_sintetica(texto):
         
         # Retorna como uma visualização
         return [{
-            'titulo': 'Lista de Itens',
-                'tipo': 'barras',
-                'dados': df,
-                'interpretacao': 'Lista de itens extraída manualmente pelo usuário.',
-                'fonte': 'Extração manual'
-            }]
-    
-    # Outros tipos de dados
-    elif tipo_dados in ["Valores percentuais", "Séries temporais", "Comparações"]:
-        st.info(f"Extraia os {tipo_dados.lower()} do texto e insira no formato de tabela abaixo")
-        dados_manual = st.text_area("Dados (um por linha, no formato 'categoria: valor'):", height=150)
-        if st.button("Processar dados"):
-            linhas = [linha.strip() for linha in dados_manual.split('\n') if linha.strip()]
-            categorias = []
-            valores = []
-            
-            for linha in linhas:
-                if ':' in linha:
-                    cat, val = linha.split(':', 1)
-                    categorias.append(cat.strip())
-                    # Tenta converter para número
-                    try:
-                        val_clean = val.strip().replace('%', '').replace('RValores Numéricos Detectados no Texto',
+            'titulo': 'Valores Numéricos Detectados no Texto',
             'tipo': 'barras',
             'dados': df,
             'interpretacao': 'Análise de valores numéricos encontrados no texto. Estes valores foram extraídos automaticamente e podem precisar de revisão para contexto completo.',
@@ -510,6 +488,128 @@ def processar_bloco_com_fallback(bloco, tipo_analise):
             visualizacoes = criar_visualizacao_sintetica(bloco)
     
     return visualizacoes
+
+
+def interface_extracao_manual(bloco):
+    """
+    Interface para permitir extração manual de dados quando a automática falha
+    """
+    st.subheader("Assistente de extração de dados")
+    st.write("O sistema não detectou dados estruturados automaticamente. Vamos tentar uma abordagem assistida.")
+    
+    # Exibir o texto para o usuário
+    st.text_area("Texto do bloco:", value=bloco, height=200, disabled=True)
+    
+    # Opções para o usuário selecionar o tipo de dados presentes
+    tipo_dados = st.selectbox("Que tipo de dados estruturados você vê neste texto?", 
+                             ["Tabela", "Lista de itens", "Valores percentuais", 
+                              "Séries temporais", "Comparações", "Outro"])
+    
+    # Baseado no tipo, oferecer opções específicas
+    if tipo_dados == "Tabela":
+        st.info("Cole abaixo os dados em formato de tabela (valores separados por tab ou vírgula)")
+        dados_tabela = st.text_area("Dados tabulares:", height=150)
+        if st.button("Processar tabela"):
+            try:
+                df = pd.read_csv(io.StringIO(dados_tabela), sep=None, engine='python')
+                st.write("Tabela detectada:")
+                st.dataframe(df)
+                
+                # Criar estrutura de visualização
+                return [{
+                    'titulo': 'Dados extraídos manualmente',
+                    'tipo': 'barras',
+                    'dados': df,
+                    'interpretacao': 'Dados extraídos manualmente pelo usuário.',
+                    'fonte': 'Extração manual'
+                }]
+            except:
+                st.error("Não foi possível interpretar os dados como tabela.")
+    
+    elif tipo_dados == "Lista de itens":
+        st.info("Cole abaixo os itens da lista (um por linha)")
+        itens_lista = st.text_area("Itens:", height=150)
+        if st.button("Processar lista"):
+            itens = [item.strip() for item in itens_lista.split('\n') if item.strip()]
+            st.write("Lista detectada:")
+            for i, item in enumerate(itens, 1):
+                st.write(f"{i}. {item}")
+                
+            # Criar DataFrame a partir da lista
+            df = pd.DataFrame({
+                'Item': itens,
+                'Valor': range(1, len(itens) + 1)
+            })
+            
+            return [{
+                'titulo': 'Lista de Itens',
+                'tipo': 'barras',
+                'dados': df,
+                'interpretacao': 'Lista de itens extraída manualmente pelo usuário.',
+                'fonte': 'Extração manual'
+            }]
+    
+    # Outros tipos de dados
+    elif tipo_dados in ["Valores percentuais", "Séries temporais", "Comparações"]:
+        st.info(f"Extraia os {tipo_dados.lower()} do texto e insira no formato de tabela abaixo")
+        dados_manual = st.text_area("Dados (um por linha, no formato 'categoria: valor'):", height=150)
+        if st.button("Processar dados"):
+            linhas = [linha.strip() for linha in dados_manual.split('\n') if linha.strip()]
+            categorias = []
+            valores = []
+            
+            for linha in linhas:
+                if ':' in linha:
+                    cat, val = linha.split(':', 1)
+                    categorias.append(cat.strip())
+                    # Tenta converter para número
+                    try:
+                        val_clean = val.strip().replace('%', '').replace('R$', '').replace(',', '.')
+                        valores.append(float(val_clean))
+                    except:
+                        valores.append(val.strip())
+                        
+            if categorias and valores:
+                df = pd.DataFrame({
+                    'Categoria': categorias,
+                    'Valor': valores
+                })
+                
+                st.write("Dados extraídos:")
+                st.dataframe(df)
+                
+                return [{
+                    'titulo': f'{tipo_dados} Extraídos',
+                    'tipo': 'barras' if tipo_dados != "Séries temporais" else 'linha',
+                    'dados': df,
+                    'interpretacao': f'{tipo_dados} extraídos manualmente pelo usuário.',
+                    'fonte': 'Extração manual'
+                }]
+    
+    elif tipo_dados == "Outro":
+        st.info("Descreva o tipo de dados que você identificou e como gostaria de visualizá-los:")
+        descricao = st.text_input("Descrição dos dados:")
+        dados_manual = st.text_area("Insira os dados em formato de tabela (CSV ou valores separados por tab):", height=150)
+        tipo_vis = st.selectbox("Tipo de visualização desejada:", 
+                               ["Barras", "Pizza", "Linha", "Área", "Radar", "Dispersão"])
+        
+        if st.button("Processar dados personalizados"):
+            try:
+                df = pd.read_csv(io.StringIO(dados_manual), sep=None, engine='python')
+                st.write("Dados extraídos:")
+                st.dataframe(df)
+                
+                return [{
+                    'titulo': descricao or 'Dados Personalizados',
+                    'tipo': tipo_vis.lower(),
+                    'dados': df,
+                    'interpretacao': 'Dados extraídos e formatados manualmente pelo usuário.',
+                    'fonte': 'Extração manual'
+                }]
+            except:
+                st.error("Não foi possível processar os dados. Verifique o formato e tente novamente.")
+    
+    return None
 
 
 def criar_visualizacao(vis_info):
@@ -707,106 +807,6 @@ def criar_visualizacao(vis_info):
         st.dataframe(df, use_container_width=True)
     
     st.markdown("</div>", unsafe_allow_html=True)
-
-
-def interface_extracao_manual(bloco):
-    """
-    Interface para permitir extração manual de dados quando a automática falha
-    """
-    st.subheader("Assistente de extração de dados")
-    st.write("O sistema não detectou dados estruturados automaticamente. Vamos tentar uma abordagem assistida.")
-    
-    # Exibir o texto para o usuário
-    st.text_area("Texto do bloco:", value=bloco, height=200, disabled=True)
-    
-    # Opções para o usuário selecionar o tipo de dados presentes
-    tipo_dados = st.selectbox("Que tipo de dados estruturados você vê neste texto?", 
-                             ["Tabela", "Lista de itens", "Valores percentuais", 
-                              "Séries temporais", "Comparações", "Outro"])
-    
-    # Baseado no tipo, oferecer opções específicas
-    if tipo_dados == "Tabela":
-        st.info("Cole abaixo os dados em formato de tabela (valores separados por tab ou vírgula)")
-        dados_tabela = st.text_area("Dados tabulares:", height=150)
-        if st.button("Processar tabela"):
-            try:
-                df = pd.read_csv(io.StringIO(dados_tabela), sep=None, engine='python')
-                st.write("Tabela detectada:")
-                st.dataframe(df)
-                
-                # Criar estrutura de visualização
-                return [{
-                    'titulo': 'Dados extraídos manualmente',
-                    'tipo': 'barras',
-                    'dados': df,
-                    'interpretacao': 'Dados extraídos manualmente pelo usuário.',
-                    'fonte': 'Extração manual'
-                }]
-            except:
-                st.error("Não foi possível interpretar os dados como tabela.")
-    
-    elif tipo_dados == "Lista de itens":
-        st.info("Cole abaixo os itens da lista (um por linha)")
-        itens_lista = st.text_area("Itens:", height=150)
-        if st.button("Processar lista"):
-            itens = [item.strip() for item in itens_lista.split('\n') if item.strip()]
-            st.write("Lista detectada:")
-            for i, item in enumerate(itens, 1):
-                st.write(f"{i}. {item}")
-                
-            # Criar DataFrame a partir da lista
-            df = pd.DataFrame({
-                'Item': itens,
-                'Valor': range(1, len(itens) + 1)
-            })
-            
-            return [{
-                'titulo': ', '').replace(',', '.')
-                        valores.append(float(val_clean))
-                    except:
-                        valores.append(val.strip())
-                        
-            if categorias and valores:
-                df = pd.DataFrame({
-                    'Categoria': categorias,
-                    'Valor': valores
-                })
-                
-                st.write("Dados extraídos:")
-                st.dataframe(df)
-                
-                return [{
-                    'titulo': f'{tipo_dados} Extraídos',
-                    'tipo': 'barras' if tipo_dados != "Séries temporais" else 'linha',
-                    'dados': df,
-                    'interpretacao': f'{tipo_dados} extraídos manualmente pelo usuário.',
-                    'fonte': 'Extração manual'
-                }]
-    
-    elif tipo_dados == "Outro":
-        st.info("Descreva o tipo de dados que você identificou e como gostaria de visualizá-los:")
-        descricao = st.text_input("Descrição dos dados:")
-        dados_manual = st.text_area("Insira os dados em formato de tabela (CSV ou valores separados por tab):", height=150)
-        tipo_vis = st.selectbox("Tipo de visualização desejada:", 
-                               ["Barras", "Pizza", "Linha", "Área", "Radar", "Dispersão"])
-        
-        if st.button("Processar dados personalizados"):
-            try:
-                df = pd.read_csv(io.StringIO(dados_manual), sep=None, engine='python')
-                st.write("Dados extraídos:")
-                st.dataframe(df)
-                
-                return [{
-                    'titulo': descricao or 'Dados Personalizados',
-                    'tipo': tipo_vis.lower(),
-                    'dados': df,
-                    'interpretacao': 'Dados extraídos e formatados manualmente pelo usuário.',
-                    'fonte': 'Extração manual'
-                }]
-            except:
-                st.error("Não foi possível processar os dados. Verifique o formato e tente novamente.")
-    
-    return None
 
 
 def check_api_key():
@@ -953,331 +953,32 @@ if uploaded_file and openai_api_key:
                         existing_vis = st.session_state.visualizacoes_por_bloco[i] or []
                         st.session_state.visualizacoes_por_bloco[i] = existing_vis + manual_vis
                         st.experimental_rerun()
-Valores Numéricos Detectados no Texto',
-            'tipo': 'barras',
-            'dados': df,
-            'interpretacao': 'Análise de valores numéricos encontrados no texto. Estes valores foram extraídos automaticamente e podem precisar de revisão para contexto completo.',
-            'fonte': 'Análise automática do texto'
-        }]
+else:
+    st.info("Carregue um documento para análise e verifique se a chave da API OpenAI está configurada.")
     
-    # Se não foi possível criar uma visualização numérica, retorna uma lista vazia
-    return []
-
-
-def processar_bloco_com_fallback(bloco, tipo_analise):
-    """
-    Processa o bloco e tenta novamente com um prompt mais simples se falhar
-    """
-    # Primeira tentativa
-    resposta = solicitar_extracao_dados(bloco, tipo_analise)
-    visualizacoes = extrair_visualizacoes_do_texto(resposta)
-    
-    # Logar a resposta para debug (opcional, descomente se necessário)
-    # with st.expander("Debug - Resposta do GPT"):
-    #     st.code(resposta)
-    
-    # Se não encontrou visualizações, tenta com um prompt alternativo
-    if not visualizacoes:
-        st.info("Tentando abordagem alternativa para detecção de dados...")
-        prompt_simples = f"""
-        Você é um analista de dados especializado em extrair dados numéricos de textos.
+    # Mostrar demo se não houver arquivo carregado
+    with st.expander("Sobre este aplicativo"):
+        st.markdown("""
+        ### Como usar este aplicativo
         
-        Analise o texto abaixo e identifique QUALQUER dado numérico ou estatístico.
-        Para cada conjunto de dados que encontrar, crie uma tabela simples em formato markdown.
+        1. Insira sua chave da API OpenAI na barra lateral (ou configure-a nos secrets do Streamlit)
+        2. Carregue um documento .docx contendo um relatório de mercado, análise financeira ou dados competitivos
+        3. O sistema divide o documento em blocos e analisa cada um usando IA
+        4. As visualizações são geradas automaticamente para os dados encontrados
+        5. Use as abas para navegar entre os diferentes blocos do documento
         
-        Cada visualização DEVE seguir EXATAMENTE este formato:
+        ### Recursos
         
-        # Título da visualização
+        - **Extração automática de dados**: O aplicativo usa GPT-4 para identificar dados estruturados e não estruturados no texto
+        - **Múltiplos tipos de gráficos**: Barras, pizza, linhas, radar, dispersão e mais, dependendo dos dados
+        - **Interpretação de dados**: Cada visualização inclui uma breve interpretação dos dados
+        - **Extração manual**: Se a detecção automática falhar, você pode extrair dados manualmente
         
-        Tipo de gráfico: barras
+        ### Melhorias implementadas
         
-        ```markdown
-        | Categoria | Valor |
-        | --------- | ----- |
-        | Item1     | 10    |
-        | Item2     | 20    |
-        ```
-        
-        Interpretação: Uma breve explicação.
-        
-        Fonte: Fonte dos dados.
-        
-        ===
-        
-        TEXTO:
-        {bloco}
-        """
-        
-        resposta_alternativa = client.chat.completions.create(
-            model=modelo,
-            messages=[
-                {"role": "system", "content": "Você é um especialista em extrair dados numéricos para visualização."},
-                {"role": "user", "content": prompt_simples},
-            ],
-            temperature=0.2,  # Temperatura mais baixa para respostas mais previsíveis
-        )
-        
-        visualizacoes = extrair_visualizacoes_do_texto(resposta_alternativa.choices[0].message.content)
-        
-        # Logar a resposta alternativa para debug (opcional, descomente se necessário)
-        # with st.expander("Debug - Resposta alternativa do GPT"):
-        #     st.code(resposta_alternativa.choices[0].message.content)
-        
-        # Se ainda não encontrou, criar uma visualização sintética
-        if not visualizacoes:
-            st.info("Gerando visualização baseada em análise de texto...")
-            visualizacoes = criar_visualizacao_sintetica(bloco)
-    
-    return visualizacoes
-
-
-def criar_visualizacao(vis_info):
-    """
-    Cria a visualização adequada com base no tipo informado.
-    """
-    titulo = vis_info['titulo']
-    tipo = vis_info['tipo']
-    df = vis_info['dados']
-    interpretacao = vis_info['interpretacao']
-    fonte = vis_info['fonte']
-    
-    if len(df.columns) < 2 or len(df) == 0:
-        st.warning(f"Dados insuficientes para criar visualização para '{titulo}'")
-        return
-    
-    # Container para o gráfico com estilo
-    st.markdown(f"<div class='chart-container'>", unsafe_allow_html=True)
-    st.markdown(f"<h3 class='sub-header'>{titulo}</h3>", unsafe_allow_html=True)
-    
-    fig = None
-    
-    # Decidir qual tipo de gráfico gerar com base no tipo informado
-    if 'barra' in tipo or 'coluna' in tipo:
-        # Identificar se são barras agrupadas ou empilhadas
-        if 'empilhada' in tipo or 'stack' in tipo:
-            fig = px.bar(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                barmode='stack'
-            )
-        elif '100%' in tipo:
-            fig = px.bar(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                barmode='relative'
-            )
-        else:
-            fig = px.bar(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                barmode='group'
-            )
-            
-        if 'horizontal' in tipo:
-            fig.update_layout(autosize=True, height=max(400, 50 * len(df)))
-            fig = go.Figure(fig).update_layout(yaxis_autorange="reversed")
-            fig.update_layout(xaxis_title=None, yaxis_title=None)
-        else:
-            fig.update_layout(xaxis_title=None, yaxis_title=None)
-            
-    elif 'pizza' in tipo or 'torta' in tipo or 'pie' in tipo:
-        fig = px.pie(
-            df, 
-            names=df.columns[0], 
-            values=df.columns[1], 
-            title=titulo
-        )
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        
-    elif 'linha' in tipo or 'line' in tipo:
-        fig = px.line(
-            df, 
-            x=df.columns[0], 
-            y=df.columns[1:], 
-            title=titulo,
-            markers=True
-        )
-        fig.update_layout(xaxis_title=None, yaxis_title=None)
-        
-    elif 'area' in tipo:
-        if 'empilhada' in tipo or 'stack' in tipo:
-            fig = px.area(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo
-            )
-        else:
-            fig = px.area(
-                df, 
-                x=df.columns[0], 
-                y=df.columns[1:], 
-                title=titulo,
-                groupnorm='fraction'
-            )
-        fig.update_layout(xaxis_title=None, yaxis_title=None)
-            
-    elif 'radar' in tipo:
-        fig = go.Figure()
-        # Considerando que a primeira coluna é o nome das categorias
-        categories = df[df.columns[0]].tolist()
-        
-        # Cada coluna adicional representa um traço no radar
-        for col in df.columns[1:]:
-            fig.add_trace(go.Scatterpolar(
-                r=df[col].tolist(),
-                theta=categories,
-                fill='toself',
-                name=col
-            ))
-            
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, df[df.columns[1:]].max().max() * 1.1]
-                )
-            ),
-            title=titulo
-        )
-        
-    elif 'dispersao' in tipo or 'scatter' in tipo or 'bolha' in tipo or 'matriz' in tipo:
-        if len(df.columns) >= 3:  # Se tiver 3 colunas, usar a terceira para tamanho
-            fig = px.scatter(
-                df, 
-                x=df.columns[1], 
-                y=df.columns[2], 
-                size=df.columns[3] if len(df.columns) > 3 else None,
-                hover_name=df.columns[0],
-                text=df.columns[0],
-                title=titulo
-            )
-            
-            # Adicionar linhas de referência se for uma matriz 2x2
-            if 'matriz' in tipo or '2x2' in tipo:
-                x_mid = (df[df.columns[1]].max() + df[df.columns[1]].min()) / 2
-                y_mid = (df[df.columns[2]].max() + df[df.columns[2]].min()) / 2
-                
-                fig.add_shape(
-                    type="line", x0=x_mid, x1=x_mid, y0=df[df.columns[2]].min(), y1=df[df.columns[2]].max(),
-                    line=dict(color="gray", width=1, dash="dash")
-                )
-                fig.add_shape(
-                    type="line", x0=df[df.columns[1]].min(), x1=df[df.columns[1]].max(), y0=y_mid, y1=y_mid,
-                    line=dict(color="gray", width=1, dash="dash")
-                )
-        else:
-            st.warning(f"Dados insuficientes para gráfico de dispersão '{titulo}'. São necessárias pelo menos 3 colunas.")
-            
-    elif 'treemap' in tipo:
-        if len(df.columns) >= 2:
-            fig = px.treemap(
-                df,
-                path=[df.columns[0]],
-                values=df.columns[1],
-                title=titulo
-            )
-            
-    elif 'mapa' in tipo and 'calor' in tipo:
-        if len(df.columns) >= 3:
-            fig = px.density_heatmap(
-                df,
-                x=df.columns[1],
-                y=df.columns[0],
-                z=df.columns[2],
-                title=titulo
-            )
-            
-    # Se nenhum tipo específico foi identificado, use um gráfico de barras simples
-    if fig is None:
-        fig = px.bar(
-            df, 
-            x=df.columns[0], 
-            y=df.columns[1], 
-            title=titulo
-        )
-    
-    # Configurações comuns para todos os gráficos
-    fig.update_layout(
-        margin=dict(l=40, r=40, t=50, b=40),
-        template="plotly_white",
-        height=500,
-        title=None  # Removemos o título pois já o exibimos em HTML
-    )
-    
-    # Exibir o gráfico
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Exibir a interpretação e fonte
-    if interpretacao:
-        st.markdown(f"<div class='insight-box'>{interpretacao}</div>", unsafe_allow_html=True)
-    
-    if fonte:
-        st.markdown(f"<p class='source-text'>Fonte: {fonte}</p>", unsafe_allow_html=True)
-    
-    # Mostrar os dados (expandível)
-    with st.expander("Ver dados"):
-        st.dataframe(df, use_container_width=True)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def interface_extracao_manual(bloco):
-    """
-    Interface para permitir extração manual de dados quando a automática falha
-    """
-    st.subheader("Assistente de extração de dados")
-    st.write("O sistema não detectou dados estruturados automaticamente. Vamos tentar uma abordagem assistida.")
-    
-    # Exibir o texto para o usuário
-    st.text_area("Texto do bloco:", value=bloco, height=200, disabled=True)
-    
-    # Opções para o usuário selecionar o tipo de dados presentes
-    tipo_dados = st.selectbox("Que tipo de dados estruturados você vê neste texto?", 
-                             ["Tabela", "Lista de itens", "Valores percentuais", 
-                              "Séries temporais", "Comparações", "Outro"])
-    
-    # Baseado no tipo, oferecer opções específicas
-    if tipo_dados == "Tabela":
-        st.info("Cole abaixo os dados em formato de tabela (valores separados por tab ou vírgula)")
-        dados_tabela = st.text_area("Dados tabulares:", height=150)
-        if st.button("Processar tabela"):
-            try:
-                df = pd.read_csv(io.StringIO(dados_tabela), sep=None, engine='python')
-                st.write("Tabela detectada:")
-                st.dataframe(df)
-                
-                # Criar estrutura de visualização
-                return [{
-                    'titulo': 'Dados extraídos manualmente',
-                    'tipo': 'barras',
-                    'dados': df,
-                    'interpretacao': 'Dados extraídos manualmente pelo usuário.',
-                    'fonte': 'Extração manual'
-                }]
-            except:
-                st.error("Não foi possível interpretar os dados como tabela.")
-    
-    elif tipo_dados == "Lista de itens":
-        st.info("Cole abaixo os itens da lista (um por linha)")
-        itens_lista = st.text_area("Itens:", height=150)
-        if st.button("Processar lista"):
-            itens = [item.strip() for item in itens_lista.split('\n') if item.strip()]
-            st.write("Lista detectada:")
-            for i, item in enumerate(itens, 1):
-                st.write(f"{i}. {item}")
-                
-            # Criar DataFrame a partir da lista
-            df = pd.DataFrame({
-                'Item': itens,
-                'Valor': range(1, len(itens) + 1)
-            })
-            
-            return [{
-                'titulo': '
+        - Sistema de retry para falhas da API
+        - Detecção de padrões mais flexível
+        - Extração manual de dados como alternativa
+        - Processamento avançado de tabelas markdown
+        - Modo de debug para visualizar as respostas da API
+        """)
