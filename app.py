@@ -327,7 +327,7 @@ if __name__ == "__main__":
                 for col in df.columns:
                     try:
                         # Processar números em formato brasileiro (vírgula como decimal)
-                        df[col] = df[col].astype(str).str.replace(',', '.').str.replace('%', '').str.replace('Rimport streamlit as st
+                        df[col] = df[col].astype(str).str.replace(',', '.').str.replace('%', '').str.replace('R$', '')
 import openai
 import docx
 import re
